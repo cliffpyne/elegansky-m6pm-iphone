@@ -103,15 +103,12 @@ def debug_creds():
 
 
 def get_google_creds():
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if not creds_json:
-        raise ValueError("GOOGLE_CREDENTIALS_JSON not set.")
-
+    import base64
+    creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
+    if not creds_b64:
+        raise ValueError("GOOGLE_CREDENTIALS_B64 not set.")
+    creds_json = base64.b64decode(creds_b64).decode("utf-8")
     info = json.loads(creds_json)
-
-    # CRITICAL FIX for PEM format
-    info["private_key"] = info["private_key"].replace("\\n", "\n")
-
     return Credentials.from_service_account_info(info, scopes=SCOPES)
 
 
