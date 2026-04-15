@@ -3,7 +3,12 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import os, io, json, zipfile
+import base64
+
 from datetime import date
+
+
+
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -15,6 +20,16 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 
 
+import base64
+
+def get_google_creds():
+    creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
+    if not creds_b64:
+        raise ValueError("GOOGLE_CREDENTIALS_B64 not set.")
+    creds_json = base64.b64decode(creds_b64).decode("utf-8")
+    info = json.loads(creds_json)
+    return Credentials.from_service_account_info(info, scopes=SCOPES)
+
 # def get_google_creds():
 #     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
 #     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
@@ -24,62 +39,62 @@ SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 #     # Fix: Render stores \n as literal text, restore real newlines in the private key
 #     info["private_key"] = info["private_key"].replace("\\n", "\n")
 #     return Credentials.from_service_account_info(info, scopes=SCOPES)
-def get_google_creds():
-    """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
-    try:
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+# def get_google_creds():
+#     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
+#     try:
+#         creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 
-        if not creds_json:
-            print("❌ ENV ERROR: GOOGLE_CREDENTIALS_JSON not set")
-            raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
+#         if not creds_json:
+#             print("❌ ENV ERROR: GOOGLE_CREDENTIALS_JSON not set")
+#             raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
 
-        print("✅ ENV FOUND: Length =", len(creds_json))
+#         print("✅ ENV FOUND: Length =", len(creds_json))
 
-        # Try parsing JSON
-        try:
-            info = json.loads(creds_json)
-            print("✅ JSON PARSED SUCCESSFULLY")
-        except Exception as e:
-            print("❌ JSON PARSE ERROR:", str(e))
-            raise
+#         # Try parsing JSON
+#         try:
+#             info = json.loads(creds_json)
+#             print("✅ JSON PARSED SUCCESSFULLY")
+#         except Exception as e:
+#             print("❌ JSON PARSE ERROR:", str(e))
+#             raise
 
-        # Check required keys
-        required_keys = ["type", "project_id", "private_key", "client_email"]
-        for key in required_keys:
-            if key not in info:
-                print(f"❌ MISSING KEY: {key}")
-                raise ValueError(f"Missing key: {key}")
+#         # Check required keys
+#         required_keys = ["type", "project_id", "private_key", "client_email"]
+#         for key in required_keys:
+#             if key not in info:
+#                 print(f"❌ MISSING KEY: {key}")
+#                 raise ValueError(f"Missing key: {key}")
 
-        print("✅ REQUIRED KEYS PRESENT")
+#         print("✅ REQUIRED KEYS PRESENT")
 
-        # Debug private key format (SAFE)
-        pk = info.get("private_key", "")
-        print("🔍 PRIVATE KEY CHECK:")
-        print("   Starts with BEGIN:", pk.startswith("-----BEGIN"))
-        print("   Ends with END:", pk.strip().endswith("-----END PRIVATE KEY-----"))
-        print("   Contains \\n:", "\\n" in pk)
-        print("   Contains real newline:", "\n" in pk)
-        print("   Length:", len(pk))
+#         # Debug private key format (SAFE)
+#         pk = info.get("private_key", "")
+#         print("🔍 PRIVATE KEY CHECK:")
+#         print("   Starts with BEGIN:", pk.startswith("-----BEGIN"))
+#         print("   Ends with END:", pk.strip().endswith("-----END PRIVATE KEY-----"))
+#         print("   Contains \\n:", "\\n" in pk)
+#         print("   Contains real newline:", "\n" in pk)
+#         print("   Length:", len(pk))
 
-        # Fix newline issue safely
-        if "\\n" in pk:
-            info["private_key"] = pk.replace("\\n", "\n")
-            print("✅ Replaced \\n with real newlines")
-        else:
-            print("ℹ️ No \\n replacement needed")
+#         # Fix newline issue safely
+#         if "\\n" in pk:
+#             info["private_key"] = pk.replace("\\n", "\n")
+#             print("✅ Replaced \\n with real newlines")
+#         else:
+#             print("ℹ️ No \\n replacement needed")
 
-        # Final credential creation test
-        try:
-            creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-            print("✅ GOOGLE CREDS CREATED SUCCESSFULLY")
-            return creds
-        except Exception as e:
-            print("❌ GOOGLE CREDS CREATION FAILED:", str(e))
-            raise
+#         # Final credential creation test
+#         try:
+#             creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+#             print("✅ GOOGLE CREDS CREATED SUCCESSFULLY")
+#             return creds
+#         except Exception as e:
+#             print("❌ GOOGLE CREDS CREATION FAILED:", str(e))
+#             raise
 
-    except Exception as e:
-        print("🔥 FINAL ERROR in get_google_creds:", str(e))
-        raise
+#     except Exception as e:
+#         print("🔥 FINAL ERROR in get_google_creds:", str(e))
+#         raise
 
 
 def get_flagged_customers():
