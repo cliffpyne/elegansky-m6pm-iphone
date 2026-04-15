@@ -115,6 +115,8 @@ def build_summary(df, office_customers, police_customers):
         return ""
 
     summary["Status"] = summary["CustomerName"].apply(get_status)
+    summary["Date"] = date.today().strftime("%d %B %Y")
+    summary = summary.sort_values("Total Debt", ascending=False)
     return summary
 
 
@@ -145,6 +147,8 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
 
     merged["Status"] = merged.apply(get_status, axis=1)
     merged["Evening Amount"] = merged["Evening Amount"].fillna("")
+    merged["Date"] = date.today().strftime("%d %B %Y")
+    merged = merged.sort_values("Morning Amount", ascending=False)
     return merged
 
 
@@ -224,9 +228,8 @@ def generate_debt_reports():
         summary = build_summary(df, office_customers, police_customers)
 
         today_str = date.today().strftime("%d %B %Y")
-        columns = ["Agent", "CustomerName", "Total Debt", "Status"]
         summary = summary.rename(columns={"CustomerName": "Customer Name"})
-        columns = ["Agent", "Customer Name", "Total Debt", "Status"]
+        columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
 
         files = write_agent_excels(summary, columns, today_str)
 
@@ -266,7 +269,7 @@ def generate_comparison_reports():
         comparison = comparison.rename(columns={"CustomerName": "Customer Name"})
 
         today_str = date.today().strftime("%d %B %Y")
-        columns = ["Agent", "Customer Name", "Morning Amount", "Evening Amount", "Status"]
+        columns = ["Date", "Agent", "Customer Name", "Morning Amount", "Evening Amount", "Status"]
 
         files = write_agent_excels(comparison, columns, today_str)
 
