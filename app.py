@@ -23,11 +23,16 @@ SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 import base64
 
 def get_google_creds():
-    creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
-    if not creds_b64:
-        raise ValueError("GOOGLE_CREDENTIALS_B64 not set.")
-    creds_json = base64.b64decode(creds_b64).decode("utf-8")
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if not creds_json:
+        raise ValueError("GOOGLE_CREDENTIALS_JSON not set.")
+
     info = json.loads(creds_json)
+
+    # fix Render newline issue
+    if "\\n" in info.get("private_key", ""):
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+
     return Credentials.from_service_account_info(info, scopes=SCOPES)
 
 # def get_google_creds():
