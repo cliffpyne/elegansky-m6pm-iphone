@@ -22,6 +22,19 @@ SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 
 import base64
 
+# def get_google_creds():
+#     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+#     if not creds_json:
+#         raise ValueError("GOOGLE_CREDENTIALS_JSON not set.")
+
+#     info = json.loads(creds_json)
+
+#     # fix Render newline issue
+#     if "\\n" in info.get("private_key", ""):
+#         info["private_key"] = info["private_key"].replace("\\n", "\n")
+
+#     return Credentials.from_service_account_info(info, scopes=SCOPES)
+
 def get_google_creds():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if not creds_json:
@@ -29,11 +42,11 @@ def get_google_creds():
 
     info = json.loads(creds_json)
 
-    # fix Render newline issue
-    if "\\n" in info.get("private_key", ""):
-        info["private_key"] = info["private_key"].replace("\\n", "\n")
+    # CRITICAL FIX for PEM format
+    info["private_key"] = info["private_key"].replace("\\n", "\n")
 
     return Credentials.from_service_account_info(info, scopes=SCOPES)
+
 
 # def get_google_creds():
 #     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
