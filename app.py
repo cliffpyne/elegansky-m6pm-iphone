@@ -246,6 +246,47 @@ def write_agent_excels(summary_df, columns, today_str):
                         else:
                             worksheet.write(row_num, col_num, val)
 
+            # ── Comparison summary rows (only when Morning/Evening columns exist) ──
+            if "Morning Amount" in columns and "Evening Amount" in columns:
+                morning_fmt = workbook.add_format({
+                    "bold": True, "bg_color": "#2563EB", "font_color": "white",
+                    "num_format": "#,##0.00", "border": 1,
+                })
+                evening_fmt = workbook.add_format({
+                    "bold": True, "bg_color": "#7C3AED", "font_color": "white",
+                    "num_format": "#,##0.00", "border": 1,
+                })
+                collected_fmt = workbook.add_format({
+                    "bold": True, "bg_color": "#059669", "font_color": "white",
+                    "num_format": "#,##0.00", "border": 1,
+                })
+                debt_fmt = workbook.add_format({
+                    "bold": True, "bg_color": "#DC2626", "font_color": "white",
+                    "num_format": "#,##0.00", "border": 1,
+                })
+
+                morning_total = group["Morning Amount"].sum()
+                evening_total = group["Evening Amount"].sum()
+                collected = morning_total - evening_total
+
+                summary_start = len(group) + 3  # leave a blank gap
+
+                # Morning Arrear 🔵
+                worksheet.write(summary_start,     2, "Morning Arrear",  morning_fmt)
+                worksheet.write_number(summary_start,     3, morning_total,  morning_fmt)
+
+                # Evening Arrear 🟣
+                worksheet.write(summary_start + 1, 2, "Evening Arrear",  evening_fmt)
+                worksheet.write_number(summary_start + 1, 3, evening_total,  evening_fmt)
+
+                # Total Collected 🟢 (morning - evening)
+                worksheet.write(summary_start + 2, 2, "Total Collected", collected_fmt)
+                worksheet.write_number(summary_start + 2, 3, collected,      collected_fmt)
+
+                # Total Debted 🔴 (evening = debt remaining)
+                worksheet.write(summary_start + 3, 2, "Total Debted",    debt_fmt)
+                worksheet.write_number(summary_start + 3, 3, evening_total,  debt_fmt)
+
         files[agent] = output.getvalue()
     return files
 
