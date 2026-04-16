@@ -196,102 +196,57 @@ def build_comparison(df_morning, df_evening):
 
 
 def write_agent_excels(summary_df, columns, today_str):
+    """Write one Excel per agent, return dict {agent_name: bytes}."""
     files = {}
-
     for agent, group in summary_df.groupby("Agent"):
         output = io.BytesIO()
-
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
             group[columns].to_excel(writer, index=False, sheet_name="Report")
-
             workbook = writer.book
             worksheet = writer.sheets["Report"]
 
-            # ── Header format ──────────────────────────────────────────
+            # Formatting
             header_fmt = workbook.add_format({
-                "bold": True,
-                "bg_color": "#1F4E79",
-                "font_color": "white",
-                "border": 1,
-                "align": "center",
+                "bold": True, "bg_color": "#1F4E79", "font_color": "white",
+                "border": 1, "align": "center"
             })
-
-            # ── Data money format ──────────────────────────────────────
+            paid_fmt = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
+            office_fmt = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C5700"})
+            police_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
             money_fmt = workbook.add_format({"num_format": "#,##0.00"})
 
-            # ── Colored summary row formats ────────────────────────────
-            morning_fmt = workbook.add_format({
-                "bold": True,
-                "bg_color": "#2563EB",   # Blue
-                "font_color": "white",
-                "num_format": "#,##0.00",
-                "border": 1,
-            })
-
-            evening_fmt = workbook.add_format({
-                "bold": True,
-                "bg_color": "#7C3AED",   # Purple
-                "font_color": "white",
-                "num_format": "#,##0.00",
-                "border": 1,
-            })
-
-            collected_fmt = workbook.add_format({
-                "bold": True,
-                "bg_color": "#059669",   # Green
-                "font_color": "white",
-                "num_format": "#,##0.00",
-                "border": 1,
-            })
-
-            debt_fmt = workbook.add_format({
-                "bold": True,
-                "bg_color": "#DC2626",   # Red
-                "font_color": "white",
-                "num_format": "#,##0.00",
-                "border": 1,
-            })
-
-            # ── Write header row ───────────────────────────────────────
+            # Write header row with formatting
             for col_num, col_name in enumerate(columns):
                 worksheet.write(0, col_num, col_name, header_fmt)
                 worksheet.set_column(col_num, col_num, 25)
 
-            # ── Write data rows ────────────────────────────────────────
+            # Write data rows with conditional formatting
             for row_num, (_, row) in enumerate(group[columns].iterrows(), start=1):
+                status = str(row.get("Status", ""))
+                row_fmt = None
+                if status == "Paid":
+                    row_fmt = paid_fmt
+                elif status == "Bike in Office":
+                    row_fmt = office_fmt
+                elif status == "Bike at Police":
+                    row_fmt = police_fmt
+
                 for col_num, col_name in enumerate(columns):
                     val = row[col_name]
-                    if col_name in ("Morning Amount", "Evening Amount"):
-                        worksheet.write_number(row_num, col_num, float(val), money_fmt)
+                    if col_name in ("Total Debt", "Morning Amount") and val != "":
+                        worksheet.write_number(row_num, col_num, float(val) if val != "" else 0, money_fmt)
+                    elif col_name == "Evening Amount" and val != "":
+                        try:
+                            worksheet.write_number(row_num, col_num, float(val), money_fmt)
+                        except Exception:
+                            worksheet.write(row_num, col_num, val)
                     else:
-                        worksheet.write(row_num, col_num, val)
-
-            # ── Summary calculations ───────────────────────────────────
-            end_row = len(group)
-            morning_total = group["Morning Amount"].sum()
-            evening_total = group["Evening Amount"].sum()
-            collected = morning_total - evening_total
-
-            summary_start = end_row + 3   # leave a blank gap
-
-            # Morning Arrear  🔵
-            worksheet.write(summary_start,     2, "Morning Arrear",  morning_fmt)
-            worksheet.write_number(summary_start,     3, morning_total,  morning_fmt)
-
-            # Evening Arrear  🟣
-            worksheet.write(summary_start + 1, 2, "Evening Arrear",  evening_fmt)
-            worksheet.write_number(summary_start + 1, 3, evening_total,  evening_fmt)
-
-            # Total Collected 🟢
-            worksheet.write(summary_start + 2, 2, "Total Collected", collected_fmt)
-            worksheet.write_number(summary_start + 2, 3, collected,      collected_fmt)
-
-            # Total Debted    🔴
-            worksheet.write(summary_start + 3, 2, "Total Debted",    debt_fmt)
-            worksheet.write_number(summary_start + 3, 3, evening_total,  debt_fmt)
+                        if row_fmt:
+                            worksheet.write(row_num, col_num, val, row_fmt)
+                        else:
+                            worksheet.write(row_num, col_num, val)
 
         files[agent] = output.getvalue()
-
     return files
 
 
@@ -314,7 +269,6 @@ def generate_debt_reports():
 
         today_str = date.today().strftime("%d %B %Y")
         summary = summary.rename(columns={"CustomerName": "Customer Name"})
-        # columns = ["Date", "Agent", "Customer Name", "Morning Amount", "Evening Amount"]
         columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
 
         files = write_agent_excels(summary, columns, today_str)
