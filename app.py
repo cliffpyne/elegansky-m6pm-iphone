@@ -314,7 +314,8 @@ def generate_debt_reports():
 
         today_str = date.today().strftime("%d %B %Y")
         summary = summary.rename(columns={"CustomerName": "Customer Name"})
-        columns = ["Date", "Agent", "Customer Name", "Morning Amount", "Evening Amount"]
+        # columns = ["Date", "Agent", "Customer Name", "Morning Amount", "Evening Amount"]
+        columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
 
         files = write_agent_excels(summary, columns, today_str)
 
