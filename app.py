@@ -268,8 +268,63 @@ def build_summary(df, office_customers, police_customers):
 
 #     return merged
 
-def build_comparison(df_morning, df_evening, office_customers, police_customers):
-    """Build morning vs evening comparison per agent."""
+# def build_comparison(df_morning, df_evening, office_customers, police_customers):
+#     """Build morning vs evening comparison per agent."""
+#     morning = (
+#         df_morning.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
+#         .sum()
+#         .rename(columns={"Balance": "Morning Amount"})
+#     )
+
+#     evening = (
+#         df_evening.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
+#         .sum()
+#         .rename(columns={"Balance": "Evening Amount"})
+#     )
+
+#     merged = morning.merge(evening, on=["Agent", "CustomerName"], how="left")
+
+#     # Replace NaN evening values with 0
+#     merged["Evening Amount"] = merged["Evening Amount"].apply(
+#         lambda x: 0 if pd.isna(x) else x
+#     )
+
+#     def get_status(row):
+#         n = row["CustomerName"].strip().upper()
+#         morning_val = row.get("Morning Amount", 0)
+#         evening_val = row.get("Evening Amount", 0)
+
+#         # 🔴 NEW RULE FIRST (highest priority)
+#         if morning_val < 26000:
+#             return ""
+
+#         # Priority 1: flagged customers
+#         if n in office_customers:
+#             return "Bike in Office"
+#         if n in police_customers:
+#             return "Bike at Police"
+
+#         # Priority 2: payment logic
+#         if evening_val == 0:
+#             return "AMELIPA"
+#         elif morning_val > evening_val:
+#             return "AMEPUNGUZA"
+#         elif morning_val == evening_val:
+#             return "HAJAFATWA"
+
+#         return ""
+
+#     merged["Status"] = merged.apply(get_status, axis=1)
+
+#     merged["Date"] = date.today().strftime("%d %B %Y")
+#     merged = merged.sort_values("Morning Amount", ascending=False)
+
+#     return merged
+
+
+def build_comparison(df_morning, df_evening):
+    """Build morning vs evening comparison per agent WITHOUT status."""
+
     morning = (
         df_morning.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
         .sum()
@@ -284,39 +339,11 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
 
     merged = morning.merge(evening, on=["Agent", "CustomerName"], how="left")
 
-    # Replace NaN evening values with 0
-    merged["Evening Amount"] = merged["Evening Amount"].apply(
-        lambda x: 0 if pd.isna(x) else x
-    )
-
-    def get_status(row):
-        n = row["CustomerName"].strip().upper()
-        morning_val = row.get("Morning Amount", 0)
-        evening_val = row.get("Evening Amount", 0)
-
-        # 🔴 NEW RULE FIRST (highest priority)
-        if morning_val < 26000:
-            return ""
-
-        # Priority 1: flagged customers
-        if n in office_customers:
-            return "Bike in Office"
-        if n in police_customers:
-            return "Bike at Police"
-
-        # Priority 2: payment logic
-        if evening_val == 0:
-            return "AMELIPA"
-        elif morning_val > evening_val:
-            return "AMEPUNGUZA"
-        elif morning_val == evening_val:
-            return "HAJAFATWA"
-
-        return ""
-
-    merged["Status"] = merged.apply(get_status, axis=1)
+    # Replace NaN with 0
+    merged["Evening Amount"] = merged["Evening Amount"].fillna(0)
 
     merged["Date"] = date.today().strftime("%d %B %Y")
+
     merged = merged.sort_values("Morning Amount", ascending=False)
 
     return merged
@@ -324,59 +351,120 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
 
 
 
+# def write_agent_excels(summary_df, columns, today_str):
+#     """Write one Excel per agent, return dict {agent_name: bytes}."""
+#     files = {}
+#     for agent, group in summary_df.groupby("Agent"):
+#         output = io.BytesIO()
+#         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+#             group[columns].to_excel(writer, index=False, sheet_name="Report")
+#             workbook = writer.book
+#             worksheet = writer.sheets["Report"]
+
+#             # Formatting
+#             header_fmt = workbook.add_format({
+#                 "bold": True, "bg_color": "#1F4E79", "font_color": "white",
+#                 "border": 1, "align": "center"
+#             })
+#             paid_fmt = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
+#             office_fmt = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C5700"})
+#             police_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+#             money_fmt = workbook.add_format({"num_format": "#,##0.00"})
+
+#             # Write header row with formatting
+#             for col_num, col_name in enumerate(columns):
+#                 worksheet.write(0, col_num, col_name, header_fmt)
+#                 worksheet.set_column(col_num, col_num, 25)
+
+#             # Write data rows with conditional formatting
+#             for row_num, (_, row) in enumerate(group[columns].iterrows(), start=1):
+#                 status = str(row.get("Status", ""))
+#                 row_fmt = None
+#                 if status == "Paid":
+#                     row_fmt = paid_fmt
+#                 elif status == "Bike in Office":
+#                     row_fmt = office_fmt
+#                 elif status == "Bike at Police":
+#                     row_fmt = police_fmt
+
+#                 for col_num, col_name in enumerate(columns):
+#                     val = row[col_name]
+#                     if col_name in ("Total Debt", "Morning Amount") and val != "":
+#                         worksheet.write_number(row_num, col_num, float(val) if val != "" else 0, money_fmt)
+#                     elif col_name == "Evening Amount" and val != "":
+#                         try:
+#                             worksheet.write_number(row_num, col_num, float(val), money_fmt)
+#                         except Exception:
+#                             worksheet.write(row_num, col_num, val)
+#                     else:
+#                         if row_fmt:
+#                             worksheet.write(row_num, col_num, val, row_fmt)
+#                         else:
+#                             worksheet.write(row_num, col_num, val)
+
+#         files[agent] = output.getvalue()
+#     return files
+
 
 def write_agent_excels(summary_df, columns, today_str):
-    """Write one Excel per agent, return dict {agent_name: bytes}."""
     files = {}
+
     for agent, group in summary_df.groupby("Agent"):
         output = io.BytesIO()
+
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
             group[columns].to_excel(writer, index=False, sheet_name="Report")
+
             workbook = writer.book
             worksheet = writer.sheets["Report"]
 
-            # Formatting
             header_fmt = workbook.add_format({
                 "bold": True, "bg_color": "#1F4E79", "font_color": "white",
                 "border": 1, "align": "center"
             })
-            paid_fmt = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
-            office_fmt = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C5700"})
-            police_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-            money_fmt = workbook.add_format({"num_format": "#,##0.00"})
 
-            # Write header row with formatting
+            money_fmt = workbook.add_format({"num_format": "#,##0.00"})
+            bold_fmt = workbook.add_format({"bold": True})
+
+            # Format header
             for col_num, col_name in enumerate(columns):
                 worksheet.write(0, col_num, col_name, header_fmt)
                 worksheet.set_column(col_num, col_num, 25)
 
-            # Write data rows with conditional formatting
+            # Write data
             for row_num, (_, row) in enumerate(group[columns].iterrows(), start=1):
-                status = str(row.get("Status", ""))
-                row_fmt = None
-                if status == "Paid":
-                    row_fmt = paid_fmt
-                elif status == "Bike in Office":
-                    row_fmt = office_fmt
-                elif status == "Bike at Police":
-                    row_fmt = police_fmt
-
                 for col_num, col_name in enumerate(columns):
                     val = row[col_name]
-                    if col_name in ("Total Debt", "Morning Amount") and val != "":
-                        worksheet.write_number(row_num, col_num, float(val) if val != "" else 0, money_fmt)
-                    elif col_name == "Evening Amount" and val != "":
-                        try:
-                            worksheet.write_number(row_num, col_num, float(val), money_fmt)
-                        except Exception:
-                            worksheet.write(row_num, col_num, val)
+
+                    if col_name in ("Morning Amount", "Evening Amount"):
+                        worksheet.write_number(row_num, col_num, float(val), money_fmt)
                     else:
-                        if row_fmt:
-                            worksheet.write(row_num, col_num, val, row_fmt)
-                        else:
-                            worksheet.write(row_num, col_num, val)
+                        worksheet.write(row_num, col_num, val)
+
+            # 🔥 CALCULATIONS
+            start_row = 1
+            end_row = len(group)
+
+            morning_total = group["Morning Amount"].sum()
+            evening_total = group["Evening Amount"].sum()
+            collected = morning_total - evening_total
+
+            summary_start = end_row + 3
+
+            worksheet.write(summary_start, 2, "Morning Arrear", bold_fmt)
+            worksheet.write_number(summary_start, 3, morning_total, money_fmt)
+
+            worksheet.write(summary_start + 1, 2, "Evening Arrear", bold_fmt)
+            worksheet.write_number(summary_start + 1, 3, evening_total, money_fmt)
+
+            worksheet.write(summary_start + 2, 2, "Total Collected", bold_fmt)
+            worksheet.write_number(summary_start + 2, 3, collected, money_fmt)
+
+            worksheet.write(summary_start + 3, 2, "Total Debted", bold_fmt)
+            worksheet.write_number(summary_start + 3, 3, evening_total, money_fmt)
 
         files[agent] = output.getvalue()
+
     return files
 
 
@@ -399,7 +487,9 @@ def generate_debt_reports():
 
         today_str = date.today().strftime("%d %B %Y")
         summary = summary.rename(columns={"CustomerName": "Customer Name"})
-        columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
+        # columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
+
+        columns = ["Date", "Agent", "Customer Name", "Morning Amount", "Evening Amount"]
 
         files = write_agent_excels(summary, columns, today_str)
 
@@ -430,7 +520,8 @@ def generate_comparison_reports():
         df_morning = parse_quickbooks(morning_file)
         df_evening = parse_quickbooks(evening_file)
 
-        comparison = build_comparison(df_morning, df_evening, office_customers, police_customers)
+        # comparison = build_comparison(df_morning, df_evening, office_customers, police_customers)
+        comparison = build_comparison(df_morning, df_evening)
         comparison = comparison.rename(columns={"CustomerName": "Customer Name"})
 
         today_str = date.today().strftime("%d %B %Y")
