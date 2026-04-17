@@ -117,7 +117,7 @@ def get_flagged_customers():
 
 
 def parse_quickbooks(file):
-    """Parse QuickBooks XLS export and return clean DataFrame."""
+    """Parse QuickBooks XLS export. Returns DataFrame with invoice details."""
     df = pd.read_excel(file, engine="xlrd", header=None)
 
     header_row = None
@@ -148,7 +148,15 @@ def parse_quickbooks(file):
         df["Balance"].astype(str).str.replace(",", "").str.strip(), errors="coerce"
     ).fillna(0)
 
-    return df[["Agent", "CustomerName", "Balance"]]
+    # Invoice Date = column index 0, Invoice Number = column index 2
+    col_names = df.columns.tolist()
+    invoice_date_col = col_names[0]
+    invoice_num_col  = col_names[2]
+
+    df["InvoiceDate"]   = pd.to_datetime(df[invoice_date_col], errors="coerce")
+    df["InvoiceNumber"] = df[invoice_num_col].astype(str).str.strip()
+
+    return df[["Agent", "CustomerName", "Balance", "InvoiceNumber", "InvoiceDate"]]
 
 
 def build_summary(df, office_customers, police_customers):
@@ -173,6 +181,37 @@ def build_summary(df, office_customers, police_customers):
     return summary
 
 
+def build_invoice_details(df):
+    """
+    Build invoice details DataFrame:
+    - Customers sorted by total debt (highest first)
+    - Within each customer, invoices sorted oldest → newest
+    - Alternating row banding handled at write time
+    """
+    customer_totals = (
+        df.groupby(["Agent", "CustomerName"])["Balance"]
+        .sum()
+        .reset_index()
+        .rename(columns={"Balance": "CustomerTotal"})
+    )
+
+    df_detail = df.merge(customer_totals, on=["Agent", "CustomerName"])
+
+    df_detail = df_detail.sort_values(
+        ["Agent", "CustomerTotal", "CustomerName", "InvoiceDate"],
+        ascending=[True, False, True, True]
+    )
+
+    df_detail = df_detail.rename(columns={
+        "CustomerName":  "Customer Name",
+        "InvoiceNumber": "Invoice Number",
+        "InvoiceDate":   "Invoice Date",
+        "Balance":       "Amount"
+    })
+
+    return df_detail[["Agent", "Customer Name", "Invoice Number", "Invoice Date", "Amount"]]
+
+
 def build_comparison(df_morning, df_evening):
     """Build morning vs evening comparison per agent WITHOUT status."""
     morning = (
@@ -195,7 +234,7 @@ def build_comparison(df_morning, df_evening):
     return merged
 
 
-def write_agent_excels(summary_df, columns, today_str):
+def write_agent_excels(summary_df, columns, today_str, invoice_df=None):
     """Write one Excel per agent, return dict {agent_name: bytes}."""
     files = {}
     for agent, group in summary_df.groupby("Agent"):
@@ -205,15 +244,17 @@ def write_agent_excels(summary_df, columns, today_str):
             workbook = writer.book
             worksheet = writer.sheets["Report"]
 
-            # Formatting
+            # ── Shared formats ────────────────────────────────────────
             header_fmt = workbook.add_format({
                 "bold": True, "bg_color": "#1F4E79", "font_color": "white",
                 "border": 1, "align": "center"
             })
-            paid_fmt = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
+            paid_fmt   = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
             office_fmt = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C5700"})
             police_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-            money_fmt = workbook.add_format({"num_format": "#,##0.00"})
+            money_fmt  = workbook.add_format({"num_format": "#,##0.00"})
+            date_fmt   = workbook.add_format({"num_format": "dd/mm/yyyy"})
+            band_fmt   = workbook.add_format({"bg_color": "#EBF3FB"})
 
             # Write header row with formatting
             for col_num, col_name in enumerate(columns):
@@ -271,21 +312,66 @@ def write_agent_excels(summary_df, columns, today_str):
 
                 summary_start = len(group) + 3  # leave a blank gap
 
-                # Morning Arrear 🔵
                 worksheet.write(summary_start,     2, "Morning Arrear",  morning_fmt)
                 worksheet.write_number(summary_start,     3, morning_total,  morning_fmt)
 
-                # Evening Arrear 🟣
                 worksheet.write(summary_start + 1, 2, "Evening Arrear",  evening_fmt)
                 worksheet.write_number(summary_start + 1, 3, evening_total,  evening_fmt)
 
-                # Total Collected 🟢 (morning - evening)
                 worksheet.write(summary_start + 2, 2, "Total Collected", collected_fmt)
                 worksheet.write_number(summary_start + 2, 3, collected,      collected_fmt)
 
-                # Total Debted 🔴 (evening = debt remaining)
                 worksheet.write(summary_start + 3, 2, "Total Debted",    debt_fmt)
                 worksheet.write_number(summary_start + 3, 3, evening_total,  debt_fmt)
+
+            # ── TAB 2: Invoice Details (debt reports only) ────────────
+            if invoice_df is not None:
+                agent_invoices = invoice_df[invoice_df["Agent"] == agent].copy()
+                detail_cols = ["Customer Name", "Invoice Number", "Invoice Date", "Amount"]
+
+                agent_invoices[detail_cols].to_excel(
+                    writer, index=False, sheet_name="Invoice Details"
+                )
+                ws2 = writer.sheets["Invoice Details"]
+
+                # Header row
+                for col_num, col_name in enumerate(detail_cols):
+                    ws2.write(0, col_num, col_name, header_fmt)
+                    ws2.set_column(col_num, col_num, 30)
+
+                # Data rows with alternating band per customer
+                current_customer = None
+                band = False
+
+                for row_num, (_, row) in enumerate(agent_invoices[detail_cols].iterrows(), start=1):
+                    cust = row["Customer Name"]
+                    if cust != current_customer:
+                        current_customer = cust
+                        band = not band
+
+                    for col_num, col_name in enumerate(detail_cols):
+                        val = row[col_name]
+                        if col_name == "Amount":
+                            ws2.write_number(
+                                row_num, col_num,
+                                float(val) if pd.notna(val) else 0,
+                                money_fmt
+                            )
+                        elif col_name == "Invoice Date":
+                            if pd.notna(val):
+                                ws2.write_datetime(
+                                    row_num, col_num,
+                                    val.to_pydatetime(),
+                                    date_fmt
+                                )
+                            else:
+                                ws2.write(row_num, col_num, "")
+                        else:
+                            fmt = band_fmt if band else None
+                            if fmt:
+                                ws2.write(row_num, col_num, str(val) if pd.notna(val) else "", fmt)
+                            else:
+                                ws2.write(row_num, col_num, str(val) if pd.notna(val) else "")
 
         files[agent] = output.getvalue()
     return files
@@ -312,7 +398,10 @@ def generate_debt_reports():
         summary = summary.rename(columns={"CustomerName": "Customer Name"})
         columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
 
-        files = write_agent_excels(summary, columns, today_str)
+        # Build invoice details for Tab 2
+        invoice_details = build_invoice_details(df)
+
+        files = write_agent_excels(summary, columns, today_str, invoice_df=invoice_details)
 
         agents = list(files.keys())
         for agent, data in files.items():
@@ -402,4 +491,4 @@ def download_all(mode):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="1.0.0.0", port=5000)
